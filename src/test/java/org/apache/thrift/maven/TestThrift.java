@@ -27,10 +27,7 @@ import org.junit.Test;
 
 import java.io.File;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 
 public class TestThrift {
 
@@ -55,7 +52,7 @@ public class TestThrift {
 
         idlDir = new File(testResourceDir, "idl");
         genJavaDir = new File(testRootDir, Thrift.GENERATED_JAVA);
-        builder = new Thrift.Builder("thrift", testRootDir);
+        builder = new Thrift.Builder(System.getProperty("os.name"), System.getProperty("os.arch"), testRootDir);
         builder
             .setGenerator("java")
             .addThriftPathElement(idlDir);

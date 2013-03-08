@@ -19,6 +19,7 @@ package org.apache.thrift.maven;
  * under the License.
  */
 
+import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.repository.ArtifactRepository;
@@ -40,17 +41,12 @@ import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
-import static com.google.common.base.Join.join;
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.base.Preconditions.*;
 import static com.google.common.collect.Sets.newHashSet;
 import static java.lang.String.format;
 import static java.util.Arrays.asList;
 import static java.util.Collections.list;
-import static org.codehaus.plexus.util.FileUtils.cleanDirectory;
-import static org.codehaus.plexus.util.FileUtils.copyStreamToFile;
-import static org.codehaus.plexus.util.FileUtils.getFiles;
+import static org.codehaus.plexus.util.FileUtils.*;
 
 /**
  * Abstract Mojo implementation.
@@ -64,6 +60,7 @@ import static org.codehaus.plexus.util.FileUtils.getFiles;
  * @author Brice Figureau
  */
 abstract class AbstractThriftMojo extends AbstractMojo {
+    private static final Joiner JOINER = Joiner.on(",");
 
     private static final String THRIFT_FILE_SUFFIX = ".thrift";
 
@@ -87,12 +84,14 @@ abstract class AbstractThriftMojo extends AbstractMojo {
     protected MavenProjectHelper projectHelper;
 
     /**
-     * This is the path to the {@code thrift} executable. By default it will search the {@code $PATH}.
-     *
-     * @parameter default-value="thrift"
-     * @required
+     * @parameter default-value="${os.name}"
      */
-    private String thriftExecutable;
+    private String thriftOsName;
+
+    /**
+     * @parameter default-value="${os.arch}"
+     */
+    private String thriftOsArch;
 
     /**
      * This string is passed to the {@code --gen} option of the {@code thrift} parameter. By default
@@ -182,7 +181,7 @@ abstract class AbstractThriftMojo extends AbstractMojo {
                     // Quick fix to fix issues with two mvn installs in a row (ie no clean)
                     cleanDirectory(outputDirectory);
 
-                    Thrift thrift = new Thrift.Builder(thriftExecutable, outputDirectory)
+                    Thrift thrift = new Thrift.Builder(thriftOsName, thriftOsArch, outputDirectory)
                             .setGenerator(generator)
                             .addThriftPathElement(thriftSourceRoot)
                             .addThriftPathElements(derivedThriftPathElements)
@@ -233,7 +232,8 @@ abstract class AbstractThriftMojo extends AbstractMojo {
     private void checkParameters() {
         checkNotNull(project, "project");
         checkNotNull(projectHelper, "projectHelper");
-        checkNotNull(thriftExecutable, "thriftExecutable");
+        checkNotNull(thriftOsName, "thriftOsName");
+        checkNotNull(thriftOsArch, "thriftOsArch");
         checkNotNull(generator, "generator");
         final File thriftSourceRoot = getThriftSourceRoot();
         checkNotNull(thriftSourceRoot);
@@ -323,7 +323,7 @@ abstract class AbstractThriftMojo extends AbstractMojo {
         checkArgument(directory.isDirectory(), "%s is not a directory", directory);
         // TODO(gak): plexus-utils needs generics
         @SuppressWarnings("unchecked")
-        List<File> thriftFilesInDirectory = getFiles(directory, join(",", includes), join(",", excludes));
+        List<File> thriftFilesInDirectory = getFiles(directory, JOINER.join(includes), JOINER.join(excludes));
         return ImmutableSet.copyOf(thriftFilesInDirectory);
     }
 
@@ -382,4 +382,5 @@ abstract class AbstractThriftMojo extends AbstractMojo {
         }
         return hexString.toString();
     }
+
 }

@@ -19,19 +19,24 @@ package org.apache.thrift.maven;
  * under the License.
  */
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.io.ByteStreams;
+import com.google.common.io.Files;
 import org.codehaus.plexus.util.cli.CommandLineException;
 import org.codehaus.plexus.util.cli.CommandLineUtils;
 import org.codehaus.plexus.util.cli.Commandline;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.base.Preconditions.*;
 import static com.google.common.collect.Lists.newLinkedList;
 import static com.google.common.collect.Sets.newHashSet;
 
@@ -45,6 +50,7 @@ import static com.google.common.collect.Sets.newHashSet;
  * @author gak@google.com (Gregory Kick)
  */
 final class Thrift {
+    final static String VERSION = "0.5.0";
 
     final static String GENERATED_JAVA = "gen-java";
 
@@ -68,13 +74,14 @@ final class Thrift {
      */
     private Thrift(String executable, String generator, ImmutableSet<File> thriftPath,
                    ImmutableSet<File> thriftFiles, File javaOutputDirectory) {
-        this.executable = checkNotNull(executable, "executable");
         this.generator = checkNotNull(generator, "generator");
         this.thriftPathElements = checkNotNull(thriftPath, "thriftPath");
         this.thriftFiles = checkNotNull(thriftFiles, "thriftFiles");
         this.javaOutputDirectory = checkNotNull(javaOutputDirectory, "javaOutputDirectory");
         this.error = new CommandLineUtils.StringStreamConsumer();
         this.output = new CommandLineUtils.StringStreamConsumer();
+
+        this.executable = getExecutable(executable);
     }
 
     /**
@@ -85,20 +92,38 @@ final class Thrift {
      * @throws CommandLineException
      */
     public int compile() throws CommandLineException {
-
         for (File thriftFile : thriftFiles) {
             Commandline cl = new Commandline();
             cl.setExecutable(executable);
             cl.addArguments(buildThriftCommand(thriftFile).toArray(new String[]{}));
             final int result = CommandLineUtils.executeCommandLine(cl, null, output, error);
-
             if (result != 0) {
                 return result;
             }
+            File genDir = new File(javaOutputDirectory, GENERATED_JAVA);
+            moveGenerated(genDir, javaOutputDirectory);
         }
 
         // result will always be 0 here.
         return 0;
+    }
+
+    private void moveGenerated(File from, File to) {
+        if (from.isDirectory()) {
+            if (!to.isDirectory()) {
+                Preconditions.checkState(to.mkdirs());
+            }
+            for (File file : Preconditions.checkNotNull(from.listFiles())) {
+                moveGenerated(file, new File(to, file.getName()));
+            }
+            Preconditions.checkState(from.delete());
+        } else {
+            try {
+                Files.move(from, to);
+            } catch (IOException e) {
+                throw new RuntimeException(String.format("Unable to move %s to %s", from, to), e);
+            }
+        }
     }
 
     /**
@@ -116,7 +141,7 @@ final class Thrift {
             command.add("-I");
             command.add(thriftPathElement.toString());
         }
-        command.add("-out");
+        command.add("-o");
         command.add(javaOutputDirectory.toString());
         command.add("--gen");
         command.add(generator);
@@ -154,19 +179,22 @@ final class Thrift {
          * Constructs a new builder. The two parameters are present as they are
          * required for all {@link Thrift} instances.
          *
-         * @param executable          The path to the {@code thrift} executable.
+         * @param osName          The os.name to search for in the executable path
+         * @param osArch          The os.arch to search for in the executable path
          * @param javaOutputDirectory The directory into which the java source files
          *                            will be generated.
          * @throws NullPointerException     If either of the arguments are {@code null}.
          * @throws IllegalArgumentException If the {@code javaOutputDirectory} is
          *                                  not a directory.
          */
-        public Builder(String executable, File javaOutputDirectory) {
-            this.executable = checkNotNull(executable, "executable");
+        public Builder(String osName, String osArch, File javaOutputDirectory) {
             this.javaOutputDirectory = checkNotNull(javaOutputDirectory);
             checkArgument(javaOutputDirectory.isDirectory());
             this.thriftFiles = newHashSet();
             this.thriftPathElements = newHashSet();
+            checkNotNull(osName, "osName");
+            checkNotNull(osArch, "osArch");
+            this.executable = getExecFilename(osName, osArch, VERSION);
         }
 
         /**
@@ -264,5 +292,51 @@ final class Thrift {
             return new Thrift(executable, generator, ImmutableSet.copyOf(thriftPathElements),
                     ImmutableSet.copyOf(thriftFiles), javaOutputDirectory);
         }
+    }
+
+    public static String getExecutable(String executableName) {
+        InputStream stream = Thrift.class.getResourceAsStream("/thrift/" + executableName);
+        Preconditions.checkNotNull(stream, "No binary embedded for: %s", executableName);
+
+        try {
+            try {
+                File file = File.createTempFile(executableName, "");
+                ByteStreams.copy(stream, Files.newOutputStreamSupplier(file));
+                if (!file.setExecutable(true)) {
+                    throw new IllegalStateException(String.format("Unable to make %s executable", file.getAbsolutePath()));
+                }
+                file.deleteOnExit();
+                return file.getAbsolutePath();
+            } finally {
+                stream.close();
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static final Map<String, String> osNameMap = ImmutableMap.<String, String>builder()
+            .put("Mac OS X", "osx")
+            .put("Linux", "linux")
+            .put("FreeBSD", "bsd")
+            .build();
+
+    private static final Map<String, String> osArchMap = ImmutableMap.<String, String>builder()
+            .put("amd64", "64")
+            .put("x86_64", "64")
+            .put("i386", "32")
+            .put("i486", "32")
+            .put("i586", "32")
+            .put("i686", "32")
+            .build();
+
+    public static String getExecFilename(String osName, String osArch, String version) {
+        osName = osNameMap.get(osName);
+        Preconditions.checkNotNull(osName, "Unknown os.name", osName);
+
+        osArch = osArchMap.get(osArch);
+        Preconditions.checkNotNull(osArch, "Unknown os.arch", osArch);
+
+        return String.format("thrift-%s-%s%s", version, osName, osArch);
     }
 }
