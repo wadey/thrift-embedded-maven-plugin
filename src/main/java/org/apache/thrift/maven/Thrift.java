@@ -319,11 +319,13 @@ final class Thrift {
             .put("Mac OS X", "osx")
             .put("Linux", "linux")
             .put("FreeBSD", "bsd")
+            .put("OpenBSD", "bsd")
             .build();
 
     private static final Map<String, String> osArchMap = ImmutableMap.<String, String>builder()
             .put("amd64", "64")
             .put("x86_64", "64")
+            .put("x86", "32")
             .put("i386", "32")
             .put("i486", "32")
             .put("i586", "32")
@@ -331,6 +333,10 @@ final class Thrift {
             .build();
 
     public static String getExecFilename(String osName, String osArch, String version) {
+        if (osName.startsWith("Windows")) {
+            return String.format("thrift-%s.exe", version);
+        }
+
         osName = osNameMap.get(osName);
         Preconditions.checkNotNull(osName, "Unknown os.name", osName);
 
