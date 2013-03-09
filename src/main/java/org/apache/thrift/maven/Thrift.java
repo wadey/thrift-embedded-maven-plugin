@@ -98,7 +98,8 @@ final class Thrift {
             cl.addArguments(buildThriftCommand(thriftFile).toArray(new String[]{}));
             final int result = CommandLineUtils.executeCommandLine(cl, null, output, error);
             if (result != 0) {
-                return result;
+                throw new RuntimeException("Failed to run: " + executable + ": got " + result);
+//                return result;
             }
             File genDir = new File(javaOutputDirectory, GENERATED_JAVA);
             moveGenerated(genDir, javaOutputDirectory);
